@@ -1,0 +1,238 @@
+CREATE TABLE`students`(
+`StudentID`INT PRIMARY KEY NOT NULL,
+`Studentname`VARCHAR(20) NOT NULL,
+`StudentTel`VARCHAR(11)NOT NULL,
+`Major`VARCHAR(50)
+);
+
+CREATE TABLE`teacher`(
+`TeacherID`INT PRIMARY KEY NOT NULL,
+`TeacherName`VARCHAR(20) NOT NULL,
+`TeacherTel`VARCHAR(11)NOT NULL,
+`WorkingDate`DATE NOT NULL,
+`TeacherDepartment`VARCHAR(60) NOT NULL
+);
+
+CREATE TABLE`courses`(
+`CourseID`INT PRIMARY KEY NOT NULL,
+`CourseName`VARCHAR(20) NOT NULL,
+`TeacherID`INT NOT NULL,
+`CourseType` CHAR(2) NOT NULL CHECK(`CourseType`IN('上午','下午')),
+`BeginDate`DATE NOT NULL DEFAULT'2024-01-01',
+`EndDate`DATE NOT NULL DEFAULT'2024-07-01',
+`Student_Number`INT NOT NULL CHECK(`Student_Number`>=0),
+FOREIGN KEY(`TeacherID`)REFERENCES`teacher`(`TeacherID`) ON DELETE CASCADE
+);
+
+CREATE TABLE`studentdaily`(
+`RecordID`INT NOT NULL PRIMARY KEY,
+`StudentID`INT NOT NULL,
+`CourseID`INT NOT NULL,
+`EnrollmentDate`DATE NOT NULL DEFAULT'2024-01-01',
+`EnrollmentType`CHAR(2) NOT NULL CHECK(`EnrollmentType`IN('成功','失败')),
+FOREIGN KEY(`StudentID`)REFERENCES`students`(`StudentID`) ON DELETE CASCADE,
+FOREIGN KEY(`CourseID`)REFERENCES`courses`(`CourseID`) ON DELETE CASCADE
+);
+
+INSERT INTO`teacher`VALUES(10,'黎栎',13001328765,'1998-11-01','生物科学学院');
+INSERT INTO`studentdaily`VALUES(1,1111,0901,'成功');
+INSERT INTO`courses`VALUES(13,'基础医学',10,'下午','2024-1-9','2024-10-24',98);
+INSERT INTO`courses`(`CourseID`,`CourseName`,`TeacherID`,`CourseType`,`Student_Number`)VALUES(01,'微积分',5,'上午',100);
+SELECT*FROM`studentdaily`;	
+INSERT INTO `studentdaily`VALUES(0016,0906,12,'2024-1-16','失败');
+UPDATE `studentdaily`
+SET `CourseID`=8
+WHERE`StudentID`=0901 AND `CourseID` =05;
+SHOW DATABASES;
+USE`class table`;
+
+SELECT*FROM`courses`
+WHERE`BeginDate`>2024-02-01 AND `CourseType`='下午'
+ORDER BY`Student_Number`DESC;
+
+SELECT  
+    `courses`.`TeacherID`,  
+    SUM(`Student_Number`) AS `Total_Students` 
+FROM  
+    `courses`
+WHERE  
+    `BeginDate` >= '2024-02-01'  
+GROUP BY  
+    `courses`.`TeacherID`;
+
+CREATE VIEW `StudentCourseView` AS 
+SELECT  
+    `studentdaily`.`StudentID`,  
+    `courses`.`CourseID`,  
+    `courses`.`CourseName`,  
+    `courses`.`CourseType`,  
+    `teacher`.`TeacherName`,  
+    `studentdaily`.`RecordID`,  
+    `studentdaily`.`EnrollmentType`,  
+    `studentdaily`.`EnrollmentDate`  
+FROM  
+    `studentdaily` 
+JOIN  
+    `courses` ON `studentdaily`.`CourseID`  = `courses`.`CourseID`  
+JOIN  
+    `teacher` ON `courses`.`TeacherID`  = `teacher`.`TeacherID` 
+ORDER BY  
+    `studentdaily`.`EnrollmentDate`  DESC; 
+
+SELECT  
+    `CourseID`, 
+    `CourseName`, 
+    `CourseType`, 
+    `TeacherName`, 
+    `RecordID`, 
+    `EnrollmentType`
+FROM  
+    `StudentCourseView`
+WHERE  
+    `StudentID` = '0901' 
+ORDER BY  
+    `EnrollmentDate` DESC; 
+
+SELECT 
+`students`.`StudentID`,
+`students`.`StudentName`,
+`students`.`StudentTel`,
+`students`.`Major`
+FROM `students`  
+JOIN `studentdaily`  ON `students`.`StudentID` = `studentdaily`.`StudentID` 
+JOIN `courses` ON `studentdaily`.`CourseID` = `courses`.`CourseID` 
+WHERE `courses`.`CourseType` = '上午' 
+GROUP BY `students`.`StudentID`,`students`.`StudentName`,`students`.`StudentTel`,`students`.`Major`
+HAVING COUNT(`courses`.`CourseID`) >= 2; 
+
+CREATE PROCEDURE CountStudentsAfter2024()
+BEGIN
+    SELECT `courses`.CourseID, `courses`.CourseName, COUNT(*) AS StudentCount
+    FROM `courses` 
+    JOIN `studentdaily` ON `courses`.CourseID = `studentdaily`.CourseID
+    WHERE `studentdaily`.EnrollmentDate > '2024-01-04'
+    GROUP BY `courses`.CourseID, `courses`.CourseName;
+END //
+
+DELIMITER ;
+DELIMITER //
+CALL CountStudentsAfter2024();
+
+DELIMITER //
+CALL `TeacherCourseInf1`;
+
+
+CREATE TABLE `error_log` ( 
+    `id` INT AUTO_INCREMENT PRIMARY KEY, 
+    `error_code` INT, 
+    `error_message` VARCHAR(255), 
+    `error_state` VARCHAR(10), 
+    `timestamp` DATETIME 
+); 
+DELIMITER // 
+CREATE PROCEDURE `TeacherCourseInf2`() 
+BEGIN 
+    DECLARE `done1` INT DEFAULT FALSE; 
+    DECLARE `teacher_id` INT; 
+    DECLARE `teacher_name` VARCHAR(20); 
+    DECLARE `course_name` VARCHAR(20); 
+    DECLARE `student_count` INT; 
+    DECLARE `error_message` VARCHAR(255); 
+    DECLARE `error_code` INT; 
+    DECLARE `error_state` VARCHAR(10); 
+ 
+    DECLARE `cur1` CURSOR FOR SELECT `TeacherID`, `TeacherName` FROM `teacher`; 
+    DECLARE CONTINUE HANDLER FOR NOT FOUND SET `done1` = TRUE; 
+    DECLARE CONTINUE HANDLER FOR SQLEXCEPTION 
+    BEGIN 
+        GET DIAGNOSTICS CONDITION 1 
+            `error_code` = MYSQL_ERRNO, 
+            `error_message` = MESSAGE_TEXT, 
+            `error_state` = RETURNED_SQLSTATE; 
+        INSERT INTO `error_log` (`error_code`, `error_message`, `error_state`, `timestamp`) 
+        VALUES (`error_code`, `error_message`, `error_state`, NOW()); 
+        ROLLBACK;  
+    END;
+ 
+    OPEN `cur1`; 
+    `read_loop`: LOOP 
+        FETCH `cur1` INTO `teacher_id`, `teacher_name`; 
+        IF `done1` THEN 
+            LEAVE `read_loop`; 
+        END IF; 
+        BEGIN 
+            SELECT `courses`.`CourseName`, COUNT(`studentdaily`.`StudentID`) INTO `course_name`, `student_count` 
+            FROM `courses` 
+            LEFT JOIN `studentdaily` ON `courses`.`CourseID` = `studentdaily`.`CourseID` 
+            WHERE `courses`.`TeacherID` = `teacher_id` 
+            GROUP BY `courses`.`CourseName`; 
+ 
+            SELECT CONCAT('教师ID: ', `teacher_id`, ', 教师姓名: ', `teacher_name`, ', 课程名称: ', `course_name`, ', 学生人数: ', `student_count`) AS Result; 
+        END; 
+    END LOOP; 
+ 
+    CLOSE `cur1`; 
+ 
+    COMMIT; 
+END // 
+DELIMITER ; 
+ DELIMITER //
+ CALL `TeacherCourseInf2`;
+
+ 
+DELIMITER //
+
+
+CREATE PROCEDURE ShowTeacherCoursesAndStudents()
+BEGIN
+    DECLARE done INT DEFAULT FALSE;
+    DECLARE t_id INT;
+    DECLARE t_name VARCHAR(20);
+    DECLARE t_course_count INT;
+    DECLARE cur CURSOR FOR SELECT TeacherID, TeacherName FROM teacher;
+    DECLARE CONTINUE HANDLER FOR NOT FOUND SET done = TRUE;
+
+    OPEN cur;
+
+    read_loop: LOOP
+        FETCH cur INTO t_id, t_name;
+        IF done THEN
+            LEAVE read_loop;
+        END IF;
+
+        SELECT COUNT(*) INTO t_course_count FROM courses WHERE TeacherID = t_id;
+
+        SELECT t_name AS TeacherName, courses.CourseName, COUNT(studentdaily.StudentID) AS StudentCount
+        FROM courses 
+        JOIN studentdaily  ON courses.CourseID = studentdaily.CourseID
+        WHERE courses.TeacherID = t_id
+        GROUP BY courses.CourseID, courses.CourseName;
+
+    END LOOP;
+
+    CLOSE cur;
+END //
+
+DELIMITER ;
+
+DELIMITER //
+CREATE TRIGGER `UpdateCourseStudentNumberAfterInsert1`
+AFTER INSERT ON `studentdaily`
+FOR EACH ROW
+BEGIN
+    UPDATE `courses` 
+    SET `Student_Number` = `Student_Number` + 1
+    WHERE `CourseID` = NEW.`CourseID`;
+END //
+DELIMITER ;
+ 
+DELIMITER //
+CREATE TRIGGER `UpdateCourseStudentNumberAfterDelete1`
+AFTER DELETE ON `studentdaily` 
+FOR EACH ROW
+BEGIN
+    UPDATE `courses`
+    SET `Student_Number` = `Student_Number` - 1
+    WHERE `CourseID` = OLD.`CourseID`;
+END //
+DELIMITER ;
